@@ -20,13 +20,15 @@ logs/                 # Ganzer Ordner für Logs
 
 # Projektspezifische Dateien
 package-lock.json    # Node.js Abhängigkeiten
+.vscode/              # Visual Studio Code Konfiguration
 
 node_modules/         # Node.js Abhängigkeiten
-.vscode/              # Visual Studio Code Konfiguration
 
 backend/database.sqlite3  # SQLite-Datenbankdatei
 backend/upload/            # Uploads-Ordner für Backend
 backend/node_modules/  # Node.js Abhängigkeiten für Backend
+
+uploads/             # Uploads-Ordner
 
 # Abhängigkeitsmanager-Verzeichnisse
 node_modules/         # JavaScript/Node.js
