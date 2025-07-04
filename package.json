@@ -1,0 +1,35 @@
+{
+  "name": "syntagma",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview",
+    "backend:install": "cd backend && npm install",
+    "backend:seed": "cd backend && npm run seed",
+    "backend:dev": "cd backend && npm run dev",
+    "setup": "npm install && npm run backend:install && npm run backend:seed"
+  },
+  "dependencies": {
+    "@headlessui/vue": "^1.7.16",
+    "@heroicons/vue": "^2.2.0",
+    "axios": "^1.6.0",
+    "highlight.js": "^11.9.0",
+    "markdown-it": "^13.0.2",
+    "pinia": "^2.1.7",
+    "vue": "^3.5.17",
+    "vue-router": "^4.2.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.0",
+    "@vue/tsconfig": "^0.7.0",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.31",
+    "tailwindcss": "^3.3.5",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.0",
+    "vue-tsc": "^2.2.10"
+  }
+}

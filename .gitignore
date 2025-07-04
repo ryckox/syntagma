@@ -1,0 +1,45 @@
+# Allgemeine Regeln
+
+# Betriebssystemspezifische Dateien
+.DS_Store             # macOS
+Thumbs.db             # Windows
+desktop.ini           # Windows
+
+
+# Temporäre Dateien
+*.tmp
+*.bak
+*~                    # Emacs temporäre Dateien
+
+# Dokumentierte Dateien
+.env                # Umgebungsvariablen
+
+# Logs
+*.log
+logs/                 # Ganzer Ordner für Logs
+
+# Projektspezifische Dateien
+package-lock.json    # Node.js Abhängigkeiten
+
+node_modules/         # Node.js Abhängigkeiten
+.vscode/              # Visual Studio Code Konfiguration
+
+backend/database.sqlite3  # SQLite-Datenbankdatei
+backend/upload/            # Uploads-Ordner für Backend
+backend/node_modules/  # Node.js Abhängigkeiten für Backend
+
+# Abhängigkeitsmanager-Verzeichnisse
+node_modules/         # JavaScript/Node.js
+vendor/               # PHP Composer, Ruby Bundler (manchmal)
+
+# Build-Artefakte
+build/
+dist/
+
+# Virtuelle Umgebungen
+venv/                 # Standardname für Python-Venvs
+.venv/                # Ein anderer gängiger Name
+env/                  # Manchmal verwendet
+.env/                 # Manchmal verwendet
+
+node_modules
