@@ -1,5 +1,5 @@
 <template>
-  <div class="space-y-6">
+  <div class="w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       <!-- Header Section -->
       <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
         <div class="flex justify-between items-start">
@@ -38,11 +38,11 @@
 
       <!-- Metadata Section -->
       <div class="bg-white shadow-sm rounded-lg p-6 mb-6">
-        <h2 class="text-lg font-semibold text-gray-900 mb-6">Metadaten</h2>
+        <h2 class="text-lg font-semibold text-gray-900 mb-6">Grundinformationen</h2>
         
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <!-- Title -->
-          <div class="md:col-span-2">
+          <div class="lg:col-span-2">
             <label for="title" class="block text-sm font-medium text-gray-700 mb-2">
               Titel <span class="text-red-500">*</span>
             </label>
@@ -56,71 +56,25 @@
             />
           </div>
 
-          <!-- Version -->
+          <!-- Version (Read-only) -->
           <div>
-            <label for="version" class="block text-sm font-medium text-gray-700 mb-2">Version</label>
+            <label for="version" class="block text-sm font-medium text-gray-700 mb-2">
+              Version 
+              <span class="text-xs text-gray-500">(automatisch verwaltet)</span>
+            </label>
             <input
               id="version"
-              v-model="form.version"
+              :value="isEditing ? form.version : 'wird bei Veröffentlichung gesetzt'"
               type="text"
-              placeholder="z.B. 1.0"
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              readonly
+              placeholder="wird automatisch gesetzt"
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm bg-gray-50 text-gray-500 cursor-not-allowed"
             />
-          </div>
-
-          <!-- Type Selection -->
-          <div>
-            <label for="type_id" class="block text-sm font-medium text-gray-700 mb-2">
-              Typ <span class="text-red-500">*</span>
-            </label>
-            <select
-              id="type_id"
-              v-model="form.type_id"
-              required
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">Typ auswählen</option>
-              <option v-for="type in types" :key="type.id" :value="type.id">
-                {{ type.name }}
-              </option>
-            </select>
-          </div>
-
-          <!-- Topic Selection -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">
-              Themen <span class="text-red-500">*</span>
-              <span class="text-xs text-gray-500">(Mehrfachauswahl möglich)</span>
-            </label>
-            <div class="max-h-32 overflow-y-auto border border-gray-300 rounded-lg p-3 bg-gray-50">
-              <div v-if="filteredTopics.length === 0" class="text-sm text-gray-500 text-center py-2">
-                {{ form.type_id ? 'Keine Themen für diesen Typ verfügbar' : 'Wählen Sie zuerst einen Typ aus' }}
-              </div>
-              <div v-else class="space-y-2">
-                <label 
-                  v-for="topic in filteredTopics" 
-                  :key="topic.id"
-                  class="flex items-center cursor-pointer hover:bg-gray-100 p-1 rounded"
-                >
-                  <input
-                    :id="`topic-${topic.id}`"
-                    v-model="form.topic_ids"
-                    :value="topic.id"
-                    type="checkbox"
-                    class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <span class="ml-2 text-sm text-gray-700">{{ topic.name }}</span>
-                </label>
-              </div>
-            </div>
-            <p v-if="form.topic_ids.length > 0" class="mt-1 text-xs text-green-600">
-              {{ form.topic_ids.length }} Thema(en) ausgewählt
-            </p>
           </div>
 
           <!-- Status -->
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Status</label>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Status <span class="text-red-500">*</span></label>
             <div class="flex space-x-4 mt-2">
               <label class="flex items-center">
                 <input
@@ -142,10 +96,60 @@
               </label>
             </div>
           </div>
+
+          <!-- Type Selection -->
+          <div>
+            <label for="type_id" class="block text-sm font-medium text-gray-700 mb-2">
+              Typ <span class="text-red-500">*</span>
+            </label>
+            <select
+              id="type_id"
+              v-model="form.type_id"
+              required
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Typ auswählen</option>
+              <option v-for="type in types" :key="type.id" :value="type.id">
+                {{ type.name }}
+              </option>
+            </select>
+          </div>
+
+          <!-- Topic Selection -->
+          <div class="lg:col-span-2">
+            <label class="block text-sm font-medium text-gray-700 mb-2">
+              Themen <span class="text-red-500">*</span>
+              <span class="text-xs text-gray-500">(Mehrfachauswahl möglich)</span>
+            </label>
+            <div class="max-h-32 overflow-y-auto border border-gray-300 rounded-lg p-3 bg-gray-50">
+              <div v-if="filteredTopics.length === 0" class="text-sm text-gray-500 text-center py-2">
+                {{ form.type_id ? 'Keine Themen für diesen Typ verfügbar' : 'Wählen Sie zuerst einen Typ aus' }}
+              </div>
+              <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <label 
+                  v-for="topic in filteredTopics" 
+                  :key="topic.id"
+                  class="flex items-center cursor-pointer hover:bg-gray-100 p-1 rounded"
+                >
+                  <input
+                    :id="`topic-${topic.id}`"
+                    v-model="form.topic_ids"
+                    :value="topic.id"
+                    type="checkbox"
+                    class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <span class="ml-2 text-sm text-gray-700">{{ topic.name }}</span>
+                </label>
+              </div>
+            </div>
+            <p v-if="form.topic_ids.length > 0" class="mt-1 text-xs text-green-600">
+              {{ form.topic_ids.length }} Thema(en) ausgewählt
+            </p>
+          </div>
         </div>
       </div>
 
-      <!-- Content Editor -->
+      <!-- Content Editor (Full Width) -->
       <div class="bg-white shadow-sm rounded-lg overflow-hidden">
         <!-- Editor Header -->
         <div class="border-b border-gray-200 px-6 py-4">
@@ -192,7 +196,7 @@
         </div>
 
         <!-- Editor Content -->
-        <div class="min-h-[600px]">
+        <div>
           <!-- Markdown Editor -->
           <div v-if="editorMode === 'markdown'" class="h-full">
             <!-- Toolbar -->
@@ -239,7 +243,7 @@ Dies ist ein Absatz mit **fettem Text** und *kursivem Text*.
 - Listenpunkt 2
 
 [Link-Text](https://example.com)"
-              class="w-full h-[70vh] p-6 border-0 focus:ring-0 resize-none font-mono text-sm leading-relaxed"
+              class="w-full h-[700px] p-6 border-0 focus:ring-0 resize-none font-mono text-sm leading-relaxed"
             ></textarea>
           </div>
 
@@ -291,6 +295,14 @@ Dies ist ein Absatz mit **fettem Text** und *kursivem Text*.
               Kein Inhaltsverzeichnis verfügbar. Fügen Sie Überschriften mit # ## ### zu Ihrem Markdown hinzu.
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- WICHTIG: Anhänge und Links Sektion - IMMER GANZ UNTEN! -->
+      <div class="bg-white shadow-sm rounded-lg p-6 mt-8" style="order: 999;">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">🔗 Anhänge & Externe Links</h3>
+        <div class="text-sm text-gray-500 italic text-center py-4 border-2 border-dashed border-gray-200 rounded-lg">
+          Anhänge und externe Links können nach dem Speichern des Regelwerks hinzugefügt werden.
         </div>
       </div>
 
@@ -434,7 +446,7 @@ const form = ref({
   content: '',
   type_id: '',
   topic_ids: [],
-  version: '1.0',
+  version: '', // Wird automatisch vom Backend gesetzt
   status: 'draft'
 })
 

@@ -16,6 +16,7 @@ import TypeManagement from '@/views/cockpit/TypeManagement.vue'
 import TopicManagement from '@/views/cockpit/TopicManagement.vue'
 import UserManagement from '@/views/cockpit/UserManagement.vue'
 import RulesetEditor from '@/views/cockpit/RulesetEditor.vue'
+import AuditLogViewer from '@/views/cockpit/AuditLogViewer.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -98,6 +99,12 @@ const router = createRouter({
           path: 'users',
           name: 'UserManagement',
           component: UserManagement
+        },
+        {
+          path: 'audit-log',
+          name: 'AuditLog',
+          component: AuditLogViewer,
+          meta: { requiresAdmin: true }
         }
       ]
     },

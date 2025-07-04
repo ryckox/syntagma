@@ -40,7 +40,26 @@ class Database {
       // Promisify common methods
       this.get = promisify(this.db.get.bind(this.db));
       this.all = promisify(this.db.all.bind(this.db));
-      this.run = promisify(this.db.run.bind(this.db));
+      
+      // Custom run method that returns lastID and changes
+      this._run = promisify(this.db.run.bind(this.db));
+      this.run = async (sql, params = []) => {
+        await this.ensureInitialized();
+        
+        return new Promise((resolve, reject) => {
+          const stmt = this.db.prepare(sql);
+          stmt.run(params, function(err) {
+            if (err) {
+              stmt.finalize();
+              reject(err);
+            } else {
+              const result = { lastID: this.lastID, changes: this.changes };
+              stmt.finalize();
+              resolve(result);
+            }
+          });
+        });
+      };
       
       // Create tables
       await this.createTables();
@@ -60,25 +79,6 @@ class Database {
     if (!this.initialized) {
       await this.initPromise;
     }
-  }
-
-  // Custom run method that returns the result
-  async run(sql, params = []) {
-    await this.ensureInitialized();
-    
-    return new Promise((resolve, reject) => {
-      if (!this.db) {
-        reject(new Error('Database is not available'));
-        return;
-      }
-      
-      const stmt = this.db.prepare(sql);
-      stmt.run(params, function(err) {
-        if (err) reject(err);
-        else resolve({ lastID: this.lastID, changes: this.changes });
-        stmt.finalize();
-      });
-    });
   }
 
   async close() {
@@ -159,6 +159,27 @@ class Database {
         )
       `;
 
+      // Audit Log Tabelle für Regelwerk-Änderungen
+      const createAuditLogTable = `
+        CREATE TABLE IF NOT EXISTS ruleset_audit_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ruleset_id INTEGER NOT NULL,
+          action TEXT NOT NULL, -- 'created', 'updated', 'published', 'archived', 'deleted'
+          field_changes TEXT, -- JSON string mit geänderten Feldern
+          old_values TEXT, -- JSON string mit alten Werten
+          new_values TEXT, -- JSON string mit neuen Werten
+          version_before TEXT,
+          version_after TEXT,
+          user_id INTEGER NOT NULL,
+          user_name TEXT,
+          timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+          ip_address TEXT,
+          user_agent TEXT,
+          FOREIGN KEY (ruleset_id) REFERENCES rulesets(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+      `;
+
       // Execute table creation with basic run
       await new Promise((resolve, reject) => {
         this.db.run(createAttachmentsTable, (err) => {
@@ -175,6 +196,15 @@ class Database {
         });
       });
       console.log('External-Links-Tabelle erstellt/überprüft');
+
+      await new Promise((resolve, reject) => {
+        this.db.run(createAuditLogTable, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      console.log('Audit-Log-Tabelle erstellt/überprüft');
+      
       console.log('Tabellenerstellung abgeschlossen');
       
     } catch (error) {

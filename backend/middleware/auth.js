@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import Database from '../database/database.js';
+import { getDatabase } from '../database/database.js';
 
 export const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -13,12 +13,11 @@ export const authenticateToken = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
     // Benutzer aus Datenbank laden
-    const db = new Database();
+    const db = await getDatabase();
     const user = await db.get(
       'SELECT id, username, email, role FROM users WHERE id = ?',
       [decoded.userId]
     );
-    await db.close();
 
     if (!user) {
       return res.status(401).json({ error: 'Ungültiger Token' });
@@ -27,6 +26,7 @@ export const authenticateToken = async (req, res, next) => {
     req.user = user;
     next();
   } catch (error) {
+    console.error('Authentication error:', error);
     return res.status(403).json({ error: 'Ungültiger oder abgelaufener Token' });
   }
 };
@@ -47,18 +47,18 @@ export const optionalAuth = async (req, res, next) => {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       
-      const db = new Database();
+      const db = await getDatabase();
       const user = await db.get(
         'SELECT id, username, email, role FROM users WHERE id = ?',
         [decoded.userId]
       );
-      await db.close();
 
       if (user) {
         req.user = user;
       }
     } catch (error) {
       // Token ungültig, aber das ist okay bei optionaler Auth
+      console.error('Optional auth error:', error);
     }
   }
   

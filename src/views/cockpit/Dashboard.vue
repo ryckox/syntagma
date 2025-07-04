@@ -118,6 +118,18 @@
               <UsersIcon class="h-5 w-5 text-blue-600 mr-3" />
               <span class="text-gray-900">Benutzer verwalten</span>
             </router-link>
+            <!-- Admin-only: Audit-Log-Button -->
+            <router-link
+              v-if="authStore.isAdmin"
+              :to="{ name: 'AuditLog' }"
+              class="flex items-center p-3 rounded-lg bg-purple-50 border border-purple-200 hover:bg-purple-100 transition-colors"
+            >
+              <svg class="h-5 w-5 text-purple-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span class="text-purple-900 font-medium">🔍 Audit-Log anzeigen</span>
+              <span class="ml-auto text-xs bg-purple-200 text-purple-700 px-2 py-1 rounded-full">Admin</span>
+            </router-link>
           </div>
         </div>
       </div>
@@ -176,6 +188,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 import {
   DocumentTextIcon,
   TagIcon,
@@ -186,6 +199,8 @@ import {
   EyeIcon,
   ArchiveBoxIcon
 } from '@heroicons/vue/24/outline'
+
+const authStore = useAuthStore()
 
 const stats = ref({
   rulesets: 0,
@@ -217,46 +232,17 @@ onMounted(async () => {
 async function loadDashboardData() {
   isLoading.value = true
   try {
-    // Load dashboard statistics directly from API
-    const [statsResponse, typesResponse, topicsResponse] = await Promise.all([
-      fetch('/api/dashboard/stats'),
-      fetch('/api/types'),
-      fetch('/api/topics')
-    ])
-
-    // Parse responses
-    const [statsData, typesData, topicsData] = await Promise.all([
-      statsResponse.json(),
-      typesResponse.json(), 
-      topicsResponse.json()
-    ])
-
-    // Update stats from direct API call or fallback to counting
-    if (statsData && statsResponse.ok) {
-      stats.value = {
-        rulesets: statsData.totalRulesets || 0,
-        types: statsData.totalTypes || typesData.length || 0,
-        topics: statsData.totalTopics || topicsData.length || 0,
-        users: statsData.totalUsers || 2
-      }
-      
-      statusCounts.value = {
-        published: statsData.publishedRulesets || 0,
-        draft: statsData.draftRulesets || 0,
-        archived: statsData.archivedRulesets || 0
-      }
-    } else {
-      // Fallback: Get counts manually if stats API doesn't exist
-      await loadDashboardDataFallback()
-    }
-
+    // Use fallback method directly since it works reliably
+    await loadDashboardDataFallback()
+    
     // Generate recent activity
     await loadRecentActivity()
     
   } catch (error) {
     console.error('Error loading dashboard data:', error)
-    // Try fallback method
-    await loadDashboardDataFallback()
+    // Set to zero as last resort
+    stats.value = { rulesets: 0, types: 0, topics: 0, users: 0 }
+    statusCounts.value = { published: 0, draft: 0, archived: 0 }
   } finally {
     isLoading.value = false
   }
@@ -264,11 +250,15 @@ async function loadDashboardData() {
 
 async function loadDashboardDataFallback() {
   try {
+    const headers: Record<string, string> = authStore.token ? {
+      'Authorization': `Bearer ${authStore.token}`
+    } : {}
+
     // Load all data with high limits to get total counts
     const [allRulesetsResponse, typesResponse, topicsResponse] = await Promise.all([
-      fetch('/api/rulesets?pageSize=1000&page=1'), // Large page size to get all
-      fetch('/api/types'),
-      fetch('/api/topics')
+      fetch('http://localhost:3001/api/rulesets?pageSize=1000&page=1', { headers }), // Large page size to get all
+      fetch('http://localhost:3001/api/types', { headers }),
+      fetch('http://localhost:3001/api/topics', { headers })
     ])
 
     const [rulesetsData, typesData, topicsData] = await Promise.all([
@@ -308,8 +298,12 @@ async function loadDashboardDataFallback() {
 
 async function loadRecentActivity() {
   try {
+    const headers: Record<string, string> = authStore.token ? {
+      'Authorization': `Bearer ${authStore.token}`
+    } : {}
+
     // Load recent activity from API
-    const response = await fetch('/api/rulesets?pageSize=5&page=1&sortBy=updated_at&sortOrder=desc')
+    const response = await fetch('http://localhost:3001/api/rulesets?pageSize=5&page=1&sortBy=updated_at&sortOrder=desc', { headers })
     const data = await response.json()
     
     if (data.rulesets) {

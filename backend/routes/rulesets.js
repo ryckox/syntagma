@@ -5,6 +5,51 @@ import { authenticateToken, requireAdmin, optionalAuth } from '../middleware/aut
 
 const router = express.Router();
 
+// Hilfsfunktion für Audit-Log-Einträge
+async function logAuditEntry(db, rulesetId, action, fieldChanges, oldValues, newValues, versionBefore, versionAfter, user, req) {
+  try {
+    await db.run(`
+      INSERT INTO ruleset_audit_log (
+        ruleset_id, action, field_changes, old_values, new_values, 
+        version_before, version_after, user_id, user_name, 
+        ip_address, user_agent
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      rulesetId,
+      action,
+      JSON.stringify(fieldChanges),
+      JSON.stringify(oldValues),
+      JSON.stringify(newValues),
+      versionBefore,
+      versionAfter,
+      user.id,
+      user.username,
+      req.ip || req.connection?.remoteAddress || 'unknown',
+      req.get('User-Agent') || 'unknown'
+    ]);
+  } catch (error) {
+    console.error('Fehler beim Schreiben des Audit-Logs:', error);
+    // Audit-Log-Fehler sollten die Hauptoperation nicht blockieren
+  }
+}
+
+// Funktion zum Vergleichen von Objekten für Audit-Log
+function getChangedFields(oldObj, newObj, fieldsToCheck) {
+  const changes = {};
+  const oldValues = {};
+  const newValues = {};
+
+  fieldsToCheck.forEach(field => {
+    if (oldObj[field] !== newObj[field]) {
+      changes[field] = { from: oldObj[field], to: newObj[field] };
+      oldValues[field] = oldObj[field];
+      newValues[field] = newObj[field];
+    }
+  });
+
+  return { changes, oldValues, newValues };
+}
+
 // Alle Regelwerke abrufen mit verbesserter Pagination
 router.get('/', optionalAuth, async (req, res) => {
   const { 
@@ -125,6 +170,113 @@ router.get('/', optionalAuth, async (req, res) => {
   }
 });
 
+// Admin-Endpunkt: Audit-Log für alle Regelwerke abrufen
+router.get('/audit-log', authenticateToken, requireAdmin, async (req, res) => {
+  const { 
+    rulesetId, 
+    rulesetSearch,
+    action, 
+    userId, 
+    page = 1, 
+    pageSize = 50,
+    startDate,
+    endDate
+  } = req.query;
+
+  try {
+    const db = await getDatabase();
+    
+    // Validierung der Pagination-Parameter
+    const currentPage = Math.max(1, parseInt(page));
+    const itemsPerPage = Math.min(Math.max(1, parseInt(pageSize)), 100);
+    const offset = (currentPage - 1) * itemsPerPage;
+    
+    let baseQuery = `
+      FROM ruleset_audit_log al
+      LEFT JOIN rulesets r ON al.ruleset_id = r.id
+      LEFT JOIN users u ON al.user_id = u.id
+    `;
+
+    const conditions = [];
+    const params = [];
+
+    // Filter anwenden
+    if (rulesetId) {
+      conditions.push("al.ruleset_id = ?");
+      params.push(rulesetId);
+    }
+
+    if (rulesetSearch) {
+      conditions.push("r.title LIKE ?");
+      params.push(`%${rulesetSearch}%`);
+    }
+
+    if (action) {
+      conditions.push("al.action = ?");
+      params.push(action);
+    }
+
+    if (userId) {
+      conditions.push("al.user_id = ?");
+      params.push(userId);
+    }
+
+    if (startDate) {
+      conditions.push("al.timestamp >= ?");
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      conditions.push("al.timestamp <= ?");
+      params.push(endDate);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    // Gesamtanzahl der Einträge
+    const countQuery = `SELECT COUNT(*) as total ${baseQuery} ${whereClause}`;
+    const countResult = await db.get(countQuery, params);
+    const total = countResult.total;
+
+    // Audit-Log-Einträge abrufen
+    const auditQuery = `
+      SELECT 
+        al.id, al.ruleset_id, al.action, al.field_changes, al.old_values, al.new_values,
+        al.version_before, al.version_after, al.timestamp, al.user_name,
+        al.ip_address, al.user_agent,
+        r.title as ruleset_title,
+        u.username as user_username, u.email as user_email
+      ${baseQuery} 
+      ${whereClause}
+      ORDER BY al.timestamp DESC
+      LIMIT ? OFFSET ?
+    `;
+
+    const auditLogs = await db.all(auditQuery, [...params, itemsPerPage, offset]);
+
+    // Parse JSON strings zurück zu Objekten
+    const processedLogs = auditLogs.map(entry => ({
+      ...entry,
+      field_changes: entry.field_changes ? JSON.parse(entry.field_changes) : {},
+      old_values: entry.old_values ? JSON.parse(entry.old_values) : {},
+      new_values: entry.new_values ? JSON.parse(entry.new_values) : {}
+    }));
+
+    res.json({
+      auditLogs: processedLogs,
+      pagination: {
+        currentPage,
+        pageSize: itemsPerPage,
+        total,
+        totalPages: Math.ceil(total / itemsPerPage)
+      }
+    });
+  } catch (error) {
+    console.error('Fehler beim Abrufen des Audit-Logs:', error);
+    res.status(500).json({ error: 'Interner Serverfehler' });
+  }
+});
+
 // Regelwerk nach ID abrufen
 router.get('/:id', optionalAuth, async (req, res) => {
   const { id } = req.params;
@@ -171,17 +323,25 @@ router.get('/:id', optionalAuth, async (req, res) => {
       ORDER BY order_index
     `, [id]);
 
-    // Änderungshistorie für Admins laden
-    let changeHistory = [];
+    // Audit-Log für Admins laden
+    let auditLog = [];
     if (req.user && req.user.role === 'admin') {
-      changeHistory = await db.all(`
-        SELECT ch.id, ch.change_type, ch.change_summary, ch.version, ch.created_at,
-               u.username as changed_by_name
-        FROM change_history ch
-        JOIN users u ON ch.changed_by = u.id
-        WHERE ch.ruleset_id = ?
-        ORDER BY ch.created_at DESC
+      auditLog = await db.all(`
+        SELECT al.id, al.action, al.field_changes, al.old_values, al.new_values,
+               al.version_before, al.version_after, al.timestamp, al.user_name,
+               al.ip_address, al.user_agent
+        FROM ruleset_audit_log al
+        WHERE al.ruleset_id = ?
+        ORDER BY al.timestamp DESC
       `, [id]);
+      
+      // Parse JSON strings zurück zu Objekten
+      auditLog = auditLog.map(entry => ({
+        ...entry,
+        field_changes: entry.field_changes ? JSON.parse(entry.field_changes) : {},
+        old_values: entry.old_values ? JSON.parse(entry.old_values) : {},
+        new_values: entry.new_values ? JSON.parse(entry.new_values) : {}
+      }));
     }
 
     
@@ -189,7 +349,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
     res.json({
       ...ruleset,
       tableOfContents,
-      changeHistory
+      auditLog
     });
   } catch (error) {
     console.error('Fehler beim Abrufen des Regelwerks:', error);
@@ -212,6 +372,8 @@ router.post('/', [
   body('status').optional().isIn(['draft', 'published']),
   body('tableOfContents').optional().isArray()
 ], async (req, res) => {
+  console.log('POST /api/rulesets - Creating new ruleset');
+  
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
@@ -241,10 +403,14 @@ router.post('/', [
       return res.status(400).json({ error: 'Ein oder mehrere Themen existieren nicht oder gehören nicht zum angegebenen Typ' });
     }
 
+    // Version basierend auf Status setzen
+    const initialVersion = status === 'published' ? 1 : 0;
+
     // Regelwerk erstellen
     const result = await db.run(`
-      INSERT INTO rulesets (title, type_id, content, status, created_by) 
-    `, [title, type_id, content, status, req.user.id]);
+      INSERT INTO rulesets (title, type_id, content, status, version, created_by) 
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [title, type_id, content, status, initialVersion, req.user.id]);
 
     const rulesetId = result.lastID;
 
@@ -265,11 +431,17 @@ router.post('/', [
       `, [rulesetId, toc.level, toc.title, toc.content || '', i + 1]);
     }
 
-    // Änderungshistorie erstellen
-    await db.run(`
-      INSERT INTO change_history (ruleset_id, changed_by, change_type, new_content, version, change_summary) 
-      VALUES (?, ?, 'created', ?, 1, 'Initiale Erstellung')
-    `, [rulesetId, req.user.id, content]);
+    // Audit-Log-Eintrag für Erstellung
+    await logAuditEntry(
+      db, rulesetId, 'created', 
+      { title, type_id, topic_ids, status }, 
+      {}, 
+      { title, type_id, topic_ids, content, status },
+      null, 
+      initialVersion.toString(), 
+      req.user, 
+      req
+    );
 
     // Erstelltes Regelwerk zurückgeben
     const newRuleset = await db.get(`
@@ -339,8 +511,10 @@ router.put('/:id', [
     }
 
     // Nur Ersteller oder Admins dürfen bearbeiten
+    console.log(`User ${req.user.id} (${req.user.username}, role: ${req.user.role}) editing ruleset ${id} created by ${existingRuleset.created_by}`);
+    
     if (existingRuleset.created_by !== req.user.id && req.user.role !== 'admin') {
-      
+      console.log(`Access denied: User ${req.user.id} (${req.user.role}) trying to edit ruleset created by ${existingRuleset.created_by}`);
       return res.status(403).json({ error: 'Keine Berechtigung zum Bearbeiten' });
     }
 
@@ -386,9 +560,15 @@ router.put('/:id', [
       }
     }
 
-    // Version erhöhen wenn Inhalt geändert wird
+    // Version erhöhen nur wenn als "published" gespeichert wird
     let newVersion = existingRuleset.version;
-    if (content !== undefined || tableOfContents) {
+    if (status === 'published' && existingRuleset.status !== 'published') {
+      // Erste Veröffentlichung oder Wiederveröffentlichung
+      newVersion = existingRuleset.version + 1;
+      updates.push('version = ?');
+      values.push(newVersion);
+    } else if (status === 'published' && (content !== undefined || tableOfContents)) {
+      // Update an bereits veröffentlichtem Regelwerk
       newVersion = existingRuleset.version + 1;
       updates.push('version = ?');
       values.push(newVersion);
@@ -432,12 +612,46 @@ router.put('/:id', [
       }
     }
 
-    // Änderungshistorie hinzufügen
-    if (content !== undefined || tableOfContents) {
-      await db.run(`
-        INSERT INTO change_history (ruleset_id, changed_by, change_type, old_content, new_content, version, change_summary) 
-        VALUES (?, ?, 'updated', ?, ?, ?, ?)
-      `, [id, req.user.id, existingRuleset.content, content || existingRuleset.content, newVersion, changeSummary || 'Regelwerk aktualisiert']);
+    // Audit-Log-Eintrag für Update
+    if (content !== undefined || tableOfContents || topic_ids !== undefined || title !== undefined || type_id !== undefined || status !== undefined) {
+      const fieldsToCheck = ['title', 'content', 'status', 'type_id'];
+      const oldObj = {
+        title: existingRuleset.title,
+        content: existingRuleset.content,
+        status: existingRuleset.status,
+        type_id: existingRuleset.type_id
+      };
+      const newObj = {
+        title: title !== undefined ? title : existingRuleset.title,
+        content: content !== undefined ? content : existingRuleset.content,
+        status: status !== undefined ? status : existingRuleset.status,
+        type_id: type_id !== undefined ? type_id : existingRuleset.type_id
+      };
+
+      const { changes, oldValues, newValues } = getChangedFields(oldObj, newObj, fieldsToCheck);
+      
+      if (topic_ids !== undefined) {
+        changes.topic_ids = { from: 'previous_topics', to: topic_ids };
+        oldValues.topic_ids = 'previous_topics';
+        newValues.topic_ids = topic_ids;
+      }
+
+      if (tableOfContents) {
+        changes.tableOfContents = { from: 'previous_toc', to: 'updated_toc' };
+        oldValues.tableOfContents = 'previous_toc';
+        newValues.tableOfContents = 'updated_toc';
+      }
+
+      await logAuditEntry(
+        db, id, 'updated',
+        changes,
+        oldValues,
+        newValues,
+        existingRuleset.version.toString(),
+        newVersion.toString(),
+        req.user,
+        req
+      );
     }
 
     // Aktualisiertes Regelwerk zurückgeben
@@ -492,11 +706,17 @@ router.delete('/:id', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Keine Berechtigung zum Löschen' });
     }
 
-    // Änderungshistorie hinzufügen vor dem Löschen
-    await db.run(`
-      INSERT INTO change_history (ruleset_id, changed_by, change_type, change_summary, version) 
-      VALUES (?, ?, 'deleted', 'Regelwerk gelöscht', 0)
-    `, [id, req.user.id]);
+    // Audit-Log-Eintrag vor dem Löschen
+    await logAuditEntry(
+      db, id, 'deleted',
+      { action: 'delete' },
+      { title: existingRuleset.title, status: 'existing' },
+      { title: existingRuleset.title, status: 'deleted' },
+      'final',
+      'deleted',
+      req.user,
+      req
+    );
 
     // Regelwerk und alle abhängigen Datensätze löschen (CASCADE)
     await db.run('DELETE FROM rulesets WHERE id = ?', [id]);
@@ -506,6 +726,53 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     res.json({ message: 'Regelwerk erfolgreich gelöscht' });
   } catch (error) {
     console.error('Fehler beim Löschen des Regelwerks:', error);
+    res.status(500).json({ error: 'Interner Serverfehler' });
+  }
+});
+
+// Admin-Endpunkt: Audit-Log für ein spezifisches Regelwerk
+router.get('/:id/audit-log', authenticateToken, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const db = await getDatabase();
+    
+    // Prüfen ob Regelwerk existiert
+    const ruleset = await db.get('SELECT id, title FROM rulesets WHERE id = ?', [id]);
+    if (!ruleset) {
+      return res.status(404).json({ error: 'Regelwerk nicht gefunden' });
+    }
+
+    // Audit-Log für das spezifische Regelwerk abrufen
+    const auditLogs = await db.all(`
+      SELECT 
+        al.id, al.action, al.field_changes, al.old_values, al.new_values,
+        al.version_before, al.version_after, al.timestamp, al.user_name,
+        al.ip_address, al.user_agent,
+        u.username as user_username, u.email as user_email
+      FROM ruleset_audit_log al
+      LEFT JOIN users u ON al.user_id = u.id
+      WHERE al.ruleset_id = ?
+      ORDER BY al.timestamp DESC
+    `, [id]);
+
+    // Parse JSON strings zurück zu Objekten
+    const processedLogs = auditLogs.map(entry => ({
+      ...entry,
+      field_changes: entry.field_changes ? JSON.parse(entry.field_changes) : {},
+      old_values: entry.old_values ? JSON.parse(entry.old_values) : {},
+      new_values: entry.new_values ? JSON.parse(entry.new_values) : {}
+    }));
+
+    res.json({
+      ruleset: {
+        id: ruleset.id,
+        title: ruleset.title
+      },
+      auditLogs: processedLogs
+    });
+  } catch (error) {
+    console.error('Fehler beim Abrufen des Audit-Logs für Regelwerk:', error);
     res.status(500).json({ error: 'Interner Serverfehler' });
   }
 });
