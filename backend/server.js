@@ -8,6 +8,7 @@ import dotenv from 'dotenv';
 
 // Database
 import { getDatabase } from './database/database.js';
+import { runMigrations } from './database/migrator.js';
 
 // Routes
 import authRoutes from './routes/auth.js';
@@ -34,13 +35,25 @@ const PORT = process.env.PORT || 3001;
 // Initialize database and start server
 async function startServer() {
   try {
-    // Initialize database and set it on app
+    console.log('🚀 Starting Syntagma Backend...');
+    
+    // 1. Run database migrations first (this ensures DB is up to date)
+    console.log('🔄 Checking for database migrations...');
+    const migrationSuccess = await runMigrations();
+    
+    if (!migrationSuccess) {
+      console.error('❌ Database migration failed');
+      process.exit(1);
+    }
+    
+    // 2. Initialize database connection
+    console.log('🔗 Initializing database connection...');
     const db = await getDatabase();
     app.set('db', db.db); // Set the raw SQLite database object
     
-    console.log('Datenbank erfolgreich initialisiert');
+    console.log('✅ Database successfully initialized and up to date');
   } catch (error) {
-    console.error('Fehler bei der Datenbankinitialisierung:', error);
+    console.error('❌ Failed to initialize server:', error);
     process.exit(1);
   }
 

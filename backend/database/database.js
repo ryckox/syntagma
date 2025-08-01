@@ -2,11 +2,30 @@ import sqlite3 from 'sqlite3';
 import { promisify } from 'util';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const dbPath = join(__dirname, 'syntagma.db');
+// Support for environment-based database configuration
+function getDatabasePath() {
+  if (process.env.DB_PATH) {
+    return process.env.DB_PATH;
+  }
+  
+  // Default path - check if we're in production/deployment
+  const prodPath = '/app/data/syntagma.db';
+  const devPath = join(__dirname, 'syntagma.db');
+  
+  // If production directory exists, use it
+  if (fs.existsSync('/app/data')) {
+    return prodPath;
+  }
+  
+  return devPath;
+}
+
+const dbPath = getDatabasePath();
 
 class Database {
   constructor() {
@@ -24,14 +43,21 @@ class Database {
     this.isInitializing = true;
     
     try {
+      // Ensure directory exists
+      const dbDir = dirname(dbPath);
+      if (!fs.existsSync(dbDir)) {
+        fs.mkdirSync(dbDir, { recursive: true });
+        console.log(`📁 Created database directory: ${dbDir}`);
+      }
+      
       // Create database connection and wait for it to be ready
       await new Promise((resolve, reject) => {
         this.db = new sqlite3.Database(dbPath, (err) => {
           if (err) {
-            console.error('Fehler beim Öffnen der Datenbank:', err);
+            console.error('❌ Error opening database:', err);
             reject(err);
           } else {
-            console.log('Datenbank erfolgreich geöffnet');
+            console.log(`✅ Database opened successfully at: ${dbPath}`);
             resolve();
           }
         });

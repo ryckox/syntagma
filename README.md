@@ -323,3 +323,30 @@ Das Projekt wurde vollständig aufgeräumt und auf Produktionsbereitschaft optim
 ✅ **Automatische Initialisierung**: Datenbank wird beim ersten Start automatisch eingerichtet  
 ✅ **Aufgeräumte Struktur**: Nur produktionsrelevante Dateien verbleiben im Repository  
 ✅ **Getestete Stabilität**: Backend und Frontend funktionieren fehlerfrei nach dem Cleanup
+
+## 🔒 Datenbankpersistenz & Updates
+
+**Syntagma bietet robuste Datensicherheit:**
+- ✅ **Automatische Backups** vor jedem Update und jeder Migration
+- ✅ **Versionierte Migrationen** mit Rollback-Funktionalität
+- ✅ **Persistente Docker Volumes** bleiben bei Container-Updates erhalten
+- ✅ **Sichere Update-Prozesse** mit Backup und Verifizierung
+
+### Update-Befehle
+
+```bash
+# Docker Update
+docker-compose pull && docker-compose up -d
+
+# Traditionelles Update
+npm run update           # Linux/macOS
+npm run update:win       # Windows PowerShell
+
+# Manuelle Backups
+npm run backup           # Linux/macOS  
+npm run backup:win       # Windows PowerShell
+npm run backup:list      # Backups auflisten
+npm run backup:restore   # Backup wiederherstellen
+```
+
+📖 **Ausführliche Dokumentation:** [DATABASE_PERSISTENCE.md](./DATABASE_PERSISTENCE.md)

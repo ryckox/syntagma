@@ -1,5 +1,15 @@
 # 🚀 Syntagma Deployment Guide
 
+## ⚠️ Wichtiger Hinweis zur Datenbank-Sicherheit
+
+**Syntagma verfügt über ein robustes System zur Datenbankpersistenz:**
+- ✅ **Automatische Backups** vor jedem Update
+- ✅ **Sichere Migrationen** mit Rollback-Funktionalität  
+- ✅ **Persistente Docker Volumes** bleiben bei Updates erhalten
+- ✅ **Versionierte Migrationen** verhindern Datenverlust
+
+📖 **Detaillierte Informationen:** Siehe [DATABASE_PERSISTENCE.md](./DATABASE_PERSISTENCE.md)
+
 ## Deployment-Optionen
 
 ### 1. 🐳 Docker (Empfohlen)

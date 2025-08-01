@@ -7,7 +7,11 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "seed": "node database/seed.js"
+    "seed": "node database/seed.js",
+    "migrate": "node -e \"import('./database/migrator.js').then(m => m.runMigrations())\"",
+    "migrate:rollback": "node -e \"import('./database/migrator.js').then(m => m.rollbackLastMigration())\"",
+    "backup": "node -e \"import('./database/migrator.js').then(m => m.createBackup())\"",
+    "health": "node health-check.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

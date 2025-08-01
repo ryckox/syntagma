@@ -9,17 +9,21 @@ services:
       - NODE_ENV=production
       - DB_PATH=/app/data/syntagma.db
       - UPLOAD_PATH=/app/uploads
-      - SEED_DEMO_DATA=true
-      - ADMIN_USERNAME=admin
-      - ADMIN_PASSWORD=admin123
-      - JWT_SECRET=your-secret-key-change-in-production
+      - SEED_DEMO_DATA=${SEED_DEMO_DATA:-false}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - JWT_SECRET=${JWT_SECRET:-your-secret-key-change-in-production}
     volumes:
+      # Persistent data storage
       - syntagma_data:/app/data
+      - syntagma_backups:/app/backups
       - syntagma_uploads:/app/uploads
       - syntagma_logs:/app/logs
+      # Optional: Mount custom migrations from host
+      # - ./backend/database/migrations:/app/backend/database/migrations
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/api/health"]
+      test: ["CMD", "node", "/app/backend/health-check.js"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -37,8 +41,30 @@ services:
     depends_on:
       - syntagma
     restart: unless-stopped
+    profiles:
+      - nginx
+
+  # Optional: PostgreSQL instead of SQLite
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-syntagma}
+      POSTGRES_USER: ${POSTGRES_USER:-syntagma}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-syntagma123}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    profiles:
+      - postgres
 
 volumes:
   syntagma_data:
+    driver: local
+  syntagma_backups:
+    driver: local
   syntagma_uploads:
+    driver: local
   syntagma_logs:
+    driver: local
+  postgres_data:
+    driver: local
