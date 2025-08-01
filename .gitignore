@@ -5,7 +5,6 @@
 Thumbs.db             # Windows
 desktop.ini           # Windows
 
-
 # Temporäre Dateien
 *.tmp
 *.bak
@@ -22,5 +21,13 @@ ssl/                  # SSL-Zertifikate
 # Test-Dateien (erstellt durch die Tools)
 backend/test_*.js
 backend/normalize_versions.js
+backend/check_*.js
+backend/create-backup.js
+backend/run-migrations.js
+
+# Backups
+backup/
+backend/backup
+backend/backups/
 
 node_modules

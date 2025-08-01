@@ -59,8 +59,7 @@
               <span
                 :class="{
                   'bg-purple-100 text-purple-800': user.role === 'admin',
-                  'bg-green-100 text-green-800': user.role === 'editor',
-                  'bg-gray-100 text-gray-800': user.role === 'viewer'
+                  'bg-gray-100 text-gray-800': user.role === 'user'
                 }"
                 class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
               >
@@ -160,8 +159,7 @@
                 v-model="form.role"
                 class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value="viewer">Betrachter</option>
-                <option value="editor">Redakteur</option>
+                <option value="user">Benutzer</option>
                 <option value="admin">Administrator</option>
               </select>
             </div>
@@ -214,7 +212,7 @@ const form = ref({
   username: '',
   email: '',
   password: '',
-  role: 'viewer',
+  role: 'user',
   active: true
 })
 
@@ -227,8 +225,7 @@ const formatDate = (dateString) => {
 const getRoleLabel = (role) => {
   const labels = {
     admin: 'Administrator',
-    editor: 'Redakteur',
-    viewer: 'Betrachter'
+    user: 'Benutzer'
   }
   return labels[role] || role
 }
@@ -260,7 +257,7 @@ const closeDialog = () => {
     username: '',
     email: '',
     password: '',
-    role: 'viewer',
+    role: 'user',
     active: true
   }
 }
