@@ -10,7 +10,13 @@
     "backend:install": "cd backend && npm install",
     "backend:seed": "cd backend && npm run seed",
     "backend:dev": "cd backend && npm run dev",
-    "setup": "npm install && npm run backend:install && npm run backend:seed"
+    "setup": "npm install && npm run backend:install && npm run backend:seed",
+    "deploy:dev": "bash deploy.sh development sqlite",
+    "deploy:prod": "bash deploy.sh production postgresql",
+    "docker:build": "docker build -t syntagma .",
+    "docker:run": "docker-compose up -d",
+    "docker:stop": "docker-compose down",
+    "health:check": "node backend/health-check.js"
   },
   "dependencies": {
     "@headlessui/vue": "^1.7.16",

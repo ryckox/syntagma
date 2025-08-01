@@ -11,37 +11,16 @@ desktop.ini           # Windows
 *.bak
 *~                    # Emacs temporäre Dateien
 
-# Dokumentierte Dateien
-.env                # Umgebungsvariablen
+# Deployment-spezifische Dateien
+.env                  # Umgebungsvariablen
+data/                 # SQLite Datenbank und andere Daten
+uploads/              # Hochgeladene Dateien
+logs/                 # Log-Dateien
+backups/              # Backup-Dateien
+ssl/                  # SSL-Zertifikate
 
-# Logs
-*.log
-logs/                 # Ganzer Ordner für Logs
-
-# Projektspezifische Dateien
-package-lock.json    # Node.js Abhängigkeiten
-.vscode/              # Visual Studio Code Konfiguration
-
-node_modules/         # Node.js Abhängigkeiten
-
-backend/database.sqlite3  # SQLite-Datenbankdatei
-backend/upload/            # Uploads-Ordner für Backend
-backend/node_modules/  # Node.js Abhängigkeiten für Backend
-
-uploads/             # Uploads-Ordner
-
-# Abhängigkeitsmanager-Verzeichnisse
-node_modules/         # JavaScript/Node.js
-vendor/               # PHP Composer, Ruby Bundler (manchmal)
-
-# Build-Artefakte
-build/
-dist/
-
-# Virtuelle Umgebungen
-venv/                 # Standardname für Python-Venvs
-.venv/                # Ein anderer gängiger Name
-env/                  # Manchmal verwendet
-.env/                 # Manchmal verwendet
+# Test-Dateien (erstellt durch die Tools)
+backend/test_*.js
+backend/normalize_versions.js
 
 node_modules
