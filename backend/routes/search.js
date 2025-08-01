@@ -48,62 +48,106 @@ router.get('/', optionalAuth, async (req, res) => {
       params.push(topic);
     }
 
-    // Full-Text-Suche
+    // Full-Text-Suche und Tag-Suche kombinieren
     const searchQuery = q.trim();
     
-    // Erstelle eine FTS-Abfrage
+    // Erstelle eine FTS-Abfrage für Titel und Inhalt
     const ftsQuery = `
       SELECT r.id, r.title, r.content, r.status, r.version, r.created_at, r.updated_at,
              rt.name as type_name, rt.color as type_color, rt.icon as type_icon,
              u.username as created_by_name,
-             rank
+             rank,
+             'direct' as match_type
       FROM rulesets_fts 
       JOIN rulesets r ON rulesets_fts.rowid = r.id
       JOIN ruleset_types rt ON r.type_id = rt.id
       JOIN users u ON r.created_by = u.id
       WHERE rulesets_fts MATCH ?
     `;
+    
+    // Tag-basierte Suche
+    const tagQuery = `
+      SELECT DISTINCT r.id, r.title, r.content, r.status, r.version, r.created_at, r.updated_at,
+             rt.name as type_name, rt.color as type_color, rt.icon as type_icon,
+             u.username as created_by_name,
+             0 as rank,
+             'tag' as match_type
+      FROM rulesets r
+      JOIN ruleset_types rt ON r.type_id = rt.id
+      JOIN users u ON r.created_by = u.id
+      JOIN ruleset_tags rt_tags ON r.id = rt_tags.ruleset_id
+      JOIN tags t ON rt_tags.tag_id = t.id
+      WHERE t.name LIKE ?
+    `;
 
-    // Parameter für FTS
-    const ftsParams = [`"${searchQuery.replace(/"/g, '""')}"`];
+    // Andere Bedingungen zu beiden Abfragen hinzufügen
+    const otherConditions = conditions.filter(c => !c.includes('rt_junction.topic_id'));
+    let ftsQueryWithConditions = ftsQuery;
+    let tagQueryWithConditions = tagQuery;
+    
+    if (otherConditions.length > 0) {
+      const conditionString = ` AND ${otherConditions.join(' AND ')}`;
+      ftsQueryWithConditions += conditionString;
+      tagQueryWithConditions += conditionString;
+    }
 
-    let finalQuery = ftsQuery;
-    let finalParams = [...ftsParams];
+    // Parameter für beide Abfragen
+    const otherParams = params.filter((_, index) => {
+      const condition = conditions[index];
+      return condition && !condition.includes('rt_junction.topic_id');
+    });
+    
+    const ftsParams = [`"${searchQuery.replace(/"/g, '""')}"`].concat(otherParams);
+    const tagParams = [`%${searchQuery}%`].concat(otherParams);
 
-    // Thema-Filter zur FTS-Query hinzufügen
+    let finalQuery, finalParams;
+    
+    // Kombiniere FTS und Tag-Suche mit UNION
     if (topic) {
+      // Mit Thema-Filter
       finalQuery = `
         SELECT DISTINCT sq.id, sq.title, sq.content, sq.status, sq.version, sq.created_at, sq.updated_at,
-               sq.type_name, sq.type_color, sq.type_icon, sq.created_by_name, sq.rank
-        FROM (${ftsQuery}) sq
+               sq.type_name, sq.type_color, sq.type_icon, sq.created_by_name, sq.rank, sq.match_type
+        FROM (
+          ${ftsQueryWithConditions}
+          UNION ALL
+          ${tagQueryWithConditions}
+        ) sq
         JOIN ruleset_topics rt_junction ON sq.id = rt_junction.ruleset_id
         WHERE rt_junction.topic_id = ?
       `;
-      finalParams.push(topic);
+      finalParams = [...ftsParams, ...tagParams, topic];
+    } else {
+      // Ohne Thema-Filter
+      finalQuery = `
+        SELECT sq.id, sq.title, sq.content, sq.status, sq.version, sq.created_at, sq.updated_at,
+               sq.type_name, sq.type_color, sq.type_icon, sq.created_by_name, sq.rank, sq.match_type
+        FROM (
+          ${ftsQueryWithConditions}
+          UNION ALL
+          ${tagQueryWithConditions}
+        ) sq
+      `;
+      finalParams = [...ftsParams, ...tagParams];
     }
 
-    // Andere Bedingungen hinzufügen
-    const otherConditions = conditions.filter(c => !c.includes('rt_junction.topic_id'));
-    if (otherConditions.length > 0) {
-      const otherParams = params.filter((_, index) => {
-        const condition = conditions[index];
-        return condition && !condition.includes('rt_junction.topic_id');
-      });
-      
-      if (topic) {
-        finalQuery += ` AND ${otherConditions.join(' AND ')}`;
-      } else {
-        finalQuery += ` AND ${otherConditions.join(' AND ')}`;
-      }
-      finalParams.push(...otherParams);
-    }
-
-    finalQuery += ` ORDER BY rank LIMIT 50`;
+    // Gruppiere nach ID um Duplikate zu vermeiden und priorisiere direkte Treffer
+    finalQuery = `
+      SELECT id, title, content, status, version, created_at, updated_at,
+             type_name, type_color, type_icon, created_by_name,
+             MIN(CASE WHEN match_type = 'direct' THEN rank ELSE 999 END) as final_rank,
+             MAX(CASE WHEN match_type = 'direct' THEN 1 ELSE 0 END) as has_direct_match
+      FROM (${finalQuery}) 
+      GROUP BY id
+      ORDER BY has_direct_match DESC, final_rank ASC 
+      LIMIT 50
+    `;
 
     const results = await db.all(finalQuery, finalParams);
 
-    // Themen für jedes Suchergebnis laden
+    // Für jedes Ergebnis prüfen, ob es über Tags gefunden wurde
     for (const result of results) {
+      // Themen laden
       const topics = await db.all(`
         SELECT t.id, t.name, t.description
         FROM topics t
@@ -111,6 +155,26 @@ router.get('/', optionalAuth, async (req, res) => {
         WHERE rt.ruleset_id = ?
       `, [result.id]);
       result.topics = topics;
+      
+      // Prüfen ob dieses Regelwerk über Tags gefunden wurde
+      const tagMatches = await db.all(`
+        SELECT t.name
+        FROM tags t
+        JOIN ruleset_tags rt ON t.id = rt.tag_id
+        WHERE rt.ruleset_id = ? AND t.name LIKE ?
+      `, [result.id, `%${searchQuery}%`]);
+      
+      // Wenn es nur über Tags (nicht direkt) gefunden wurde, markiere es
+      if (tagMatches.length > 0 && result.has_direct_match === 0) {
+        result.found_via_tag = true;
+        result.matching_tags = tagMatches.map(t => t.name);
+      } else {
+        result.found_via_tag = false;
+      }
+      
+      // Entferne interne Felder
+      delete result.final_rank;
+      delete result.has_direct_match;
     }
     
 

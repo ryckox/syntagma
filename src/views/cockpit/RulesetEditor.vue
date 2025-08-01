@@ -13,9 +13,14 @@
         </div>
         <div class="flex space-x-3">
           <button
-            @click="saveRuleset"
-            :disabled="loading || !isFormValid"
-            class="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg font-medium transition-colors"
+            @click="showSaveConfirmModal = true"
+            :disabled="loading || !canSave"
+            :class="[
+              'px-6 py-2 rounded-lg font-medium transition-colors',
+              canSave 
+                ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+            ]"
           >
             <span v-if="loading" class="flex items-center">
               <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
@@ -24,6 +29,8 @@
               </svg>
               Speichern...
             </span>
+            <span v-else-if="!hasChanges && isEditMode">Keine Änderungen</span>
+            <span v-else-if="!isFormValid">{{ isEditMode ? 'Pflichtfelder ausfüllen' : 'Pflichtfelder ausfüllen' }}</span>
             <span v-else>{{ isEditMode ? 'Änderungen speichern' : 'Regelwerk erstellen' }}</span>
           </button>
           <button
@@ -145,7 +152,63 @@
           <p v-if="ruleset.topic_ids && ruleset.topic_ids.length > 0" class="mt-1 text-xs text-green-600">
             {{ ruleset.topic_ids.length }} Thema(en) ausgewählt
           </p>
-          
+        </div>
+
+        <!-- Tags Section -->
+        <div class="lg:col-span-2">
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Schlagwörter
+            <span class="text-xs text-gray-500">(Optional, für erweiterte Suchfunktion)</span>
+          </label>
+          <div class="space-y-2">
+            <!-- Tag Input -->
+            <div class="relative">
+              <input
+                v-model="tagInput"
+                @input="onTagInput"
+                @keydown.enter.prevent="addTag"
+                @keydown.comma.prevent="addTag"
+                @keydown.tab.prevent="addTag"
+                type="text"
+                placeholder="Schlagwort eingeben und Enter drücken..."
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+              <!-- Tag Suggestions -->
+              <div v-if="tagSuggestions.length > 0" class="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-32 overflow-y-auto">
+                <button
+                  v-for="suggestion in tagSuggestions"
+                  :key="suggestion"
+                  @click="selectTagSuggestion(suggestion)"
+                  type="button"
+                  class="w-full px-3 py-2 text-left hover:bg-gray-100 focus:bg-gray-100 text-sm"
+                >
+                  {{ suggestion }}
+                </button>
+              </div>
+            </div>
+            
+            <!-- Selected Tags -->
+            <div v-if="ruleset.tag_names && ruleset.tag_names.length > 0" class="flex flex-wrap gap-2">
+              <span
+                v-for="(tag, index) in ruleset.tag_names"
+                :key="index"
+                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+              >
+                {{ tag }}
+                <button
+                  @click="removeTag(index)"
+                  type="button"
+                  class="ml-1 text-blue-600 hover:text-blue-800"
+                >
+                  ×
+                </button>
+              </span>
+            </div>
+            
+            <p class="text-xs text-gray-500">
+              Schlagwörter helfen bei der Suche und Organisation von Regelwerken. Drücken Sie Enter, Komma oder Tab, um ein Schlagwort hinzuzufügen.
+            </p>
+          </div>
 
         </div>
       </div>
@@ -425,6 +488,68 @@ Dies ist ein Absatz mit **fettem Text** und *kursivem Text*.
       </div>
     </div>
   </div>
+
+  <!-- Save Confirmation Modal -->
+  <div v-if="showSaveConfirmModal" class="fixed inset-0 z-50 overflow-y-auto">
+    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+      <!-- Background overlay -->
+      <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+           @click="showSaveConfirmModal = false"></div>
+
+      <!-- Center the modal -->
+      <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+
+      <!-- Modal panel -->
+      <div class="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
+        <div class="sm:flex sm:items-start">
+          <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
+            <QuestionMarkCircleIcon class="h-6 w-6 text-blue-600" />
+          </div>
+          <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">
+              {{ isEditMode ? 'Änderungen speichern?' : 'Regelwerk erstellen?' }}
+            </h3>
+            <div class="mt-2">
+              <p class="text-sm text-gray-500">
+                {{ isEditMode 
+                  ? 'Möchten Sie die Änderungen am Regelwerk wirklich speichern?' 
+                  : 'Möchten Sie das neue Regelwerk wirklich erstellen?' 
+                }}
+              </p>
+              <div v-if="isEditMode && ruleset.status === 'published'" class="mt-2 p-2 bg-yellow-50 rounded-md">
+                <p class="text-xs text-yellow-800">
+                  <strong>Hinweis:</strong> Bei Inhaltsänderungen wird die Versionsnummer automatisch erhöht.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+          <button
+            @click="confirmSave"
+            :disabled="loading"
+            class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50"
+          >
+            <span v-if="loading" class="flex items-center">
+              <svg class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Speichern...
+            </span>
+            <span v-else>{{ isEditMode ? 'Speichern' : 'Erstellen' }}</span>
+          </button>
+          <button
+            @click="showSaveConfirmModal = false"
+            :disabled="loading"
+            class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:w-auto sm:text-sm disabled:opacity-50"
+          >
+            Abbrechen
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -448,12 +573,17 @@ const loading = ref(false)
 const editorMode = ref('markdown')
 const contentEditor = ref(null)
 const showMarkdownHelp = ref(false)
+const showSaveConfirmModal = ref(false)
+
+// Original data for change detection
+const originalRuleset = ref({})
 
 const ruleset = ref({
   title: '',
   content: '',
   type_id: '',
   topic_ids: [],
+  tag_names: [],
   version: '',
   status: 'draft',
   description: '',
@@ -471,6 +601,68 @@ watch(() => ruleset.value.type_id, (newTypeId, oldTypeId) => {
     ruleset.value.topic_ids = []
   }
 })
+
+// Tag-related variables and methods
+const tagInput = ref('')
+const tagSuggestions = ref([])
+let tagSuggestionTimeout = null
+
+const onTagInput = async () => {
+  const input = tagInput.value.trim()
+  
+  // Clear previous timeout
+  if (tagSuggestionTimeout) {
+    clearTimeout(tagSuggestionTimeout)
+  }
+  
+  if (input.length < 2) {
+    tagSuggestions.value = []
+    return
+  }
+  
+  // Debounce the API call
+  tagSuggestionTimeout = setTimeout(async () => {
+    try {
+      const response = await fetch(`/api/rulesets/tags/suggest?q=${encodeURIComponent(input)}`, {
+        headers: {
+          'Authorization': `Bearer ${authStore.token}`
+        }
+      })
+      
+      if (response.ok) {
+        const suggestions = await response.json()
+        // Filter out already selected tags
+        tagSuggestions.value = suggestions.filter(tag => 
+          !ruleset.value.tag_names.includes(tag)
+        ).slice(0, 5)
+      }
+    } catch (error) {
+      console.error('Error fetching tag suggestions:', error)
+      tagSuggestions.value = []
+    }
+  }, 300)
+}
+
+const addTag = () => {
+  const tag = tagInput.value.trim()
+  if (tag && !ruleset.value.tag_names.includes(tag) && tag.length <= 50) {
+    ruleset.value.tag_names.push(tag)
+    tagInput.value = ''
+    tagSuggestions.value = []
+  }
+}
+
+const selectTagSuggestion = (tag) => {
+  if (!ruleset.value.tag_names.includes(tag)) {
+    ruleset.value.tag_names.push(tag)
+    tagInput.value = ''
+    tagSuggestions.value = []
+  }
+}
+
+const removeTag = (index) => {
+  ruleset.value.tag_names.splice(index, 1)
+}
 
 // Debug watcher für topic_ids - entfernt
 // watch(() => ruleset.value.topic_ids, (newVal, oldVal) => {
@@ -490,6 +682,29 @@ const isFormValid = computed(() => {
          ruleset.value.topic_ids && 
          ruleset.value.topic_ids.length > 0 && 
          ruleset.value.content
+})
+
+// Change detection
+const hasChanges = computed(() => {
+  if (!isEditMode.value) {
+    // For new rulesets, check if any fields are filled
+    return ruleset.value.title || 
+           ruleset.value.content || 
+           (ruleset.value.tag_names && ruleset.value.tag_names.length > 0) ||
+           (ruleset.value.topic_ids && ruleset.value.topic_ids.length > 0)
+  }
+  
+  // For edit mode, compare with original
+  return ruleset.value.title !== originalRuleset.value.title ||
+         ruleset.value.content !== originalRuleset.value.content ||
+         ruleset.value.type_id !== originalRuleset.value.type_id ||
+         ruleset.value.status !== originalRuleset.value.status ||
+         JSON.stringify(ruleset.value.topic_ids || []) !== JSON.stringify(originalRuleset.value.topic_ids || []) ||
+         JSON.stringify(ruleset.value.tag_names || []) !== JSON.stringify(originalRuleset.value.tag_names || [])
+})
+
+const canSave = computed(() => {
+  return isFormValid.value && hasChanges.value
 })
 
 // Automatische TOC-Generierung aus Markdown
@@ -579,6 +794,20 @@ async function loadRuleset() {
       ruleset.value.effective_date = data.effective_date || ''
       ruleset.value.is_active = data.is_active !== undefined ? data.is_active : true
       
+      // Tags setzen (nur wenn vorhanden) - sicherstellen, dass es ein Array von Strings ist
+      if (data.tag_names) {
+        if (Array.isArray(data.tag_names)) {
+          // Falls es ein Array von Objekten ist, extrahiere die Namen
+          ruleset.value.tag_names = data.tag_names.map(tag => 
+            typeof tag === 'string' ? tag : tag.name
+          )
+        } else {
+          ruleset.value.tag_names = []
+        }
+      } else {
+        ruleset.value.tag_names = []
+      }
+      
       // Warten auf Vue Reaktivität
       await nextTick()
       
@@ -590,6 +819,16 @@ async function loadRuleset() {
       
       // Erneut warten und dann prüfen
       await nextTick()
+      
+      // Save original data for change detection
+      originalRuleset.value = {
+        title: ruleset.value.title,
+        content: ruleset.value.content,
+        type_id: ruleset.value.type_id,
+        status: ruleset.value.status,
+        topic_ids: [...ruleset.value.topic_ids],
+        tag_names: [...ruleset.value.tag_names]
+      }
     } else if (response.status === 401) {
       console.error('Authentication required')
       authStore.logout()
@@ -628,8 +867,13 @@ function insertMarkdown(before, after) {
   }, 0)
 }
 
+async function confirmSave() {
+  showSaveConfirmModal.value = false
+  await saveRuleset()
+}
+
 async function saveRuleset() {
-  if (!isFormValid.value) return
+  if (!canSave.value) return
   
   if (!authStore.isAuthenticated) {
     alert('Sie müssen angemeldet sein, um Regelwerke zu speichern.')
@@ -646,7 +890,8 @@ async function saveRuleset() {
       topic_ids: (ruleset.value.topic_ids || []).map(id => parseInt(id)),
       content: ruleset.value.content,
       status: ruleset.value.status,
-      tableOfContents: generatedTableOfContents.value
+      tableOfContents: generatedTableOfContents.value,
+      tag_names: ruleset.value.tag_names || []
     }
     
     const headers = {
@@ -689,8 +934,7 @@ async function saveRuleset() {
       throw new Error(errorMessage)
     }
     
-    // Erfolg
-    alert('Regelwerk erfolgreich gespeichert!')
+    // Erfolg - direkt zurück zur Übersicht ohne Bestätigung
     router.push('/cockpit/rulesets')
     
   } catch (error) {

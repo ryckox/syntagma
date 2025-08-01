@@ -180,6 +180,28 @@ class Database {
         )
       `;
 
+      // Tags-Tabelle für Schlagworte
+      const createTagsTable = `
+        CREATE TABLE IF NOT EXISTS tags (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `;
+
+      // Junction-Tabelle für Regelwerk-Tag-Zuordnung
+      const createRulesetTagsTable = `
+        CREATE TABLE IF NOT EXISTS ruleset_tags (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ruleset_id INTEGER NOT NULL,
+          tag_id INTEGER NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (ruleset_id) REFERENCES rulesets(id) ON DELETE CASCADE,
+          FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE,
+          UNIQUE(ruleset_id, tag_id)
+        )
+      `;
+
       // Execute table creation with basic run
       await new Promise((resolve, reject) => {
         this.db.run(createAttachmentsTable, (err) => {
@@ -204,6 +226,39 @@ class Database {
         });
       });
       console.log('Audit-Log-Tabelle erstellt/überprüft');
+
+      await new Promise((resolve, reject) => {
+        this.db.run(createTagsTable, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      console.log('Tags-Tabelle erstellt/überprüft');
+
+      await new Promise((resolve, reject) => {
+        this.db.run(createRulesetTagsTable, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      console.log('Ruleset-Tags-Junction-Tabelle erstellt/überprüft');
+
+      // Indizes für bessere Performance erstellen
+      const createIndexes = [
+        'CREATE INDEX IF NOT EXISTS idx_ruleset_tags_ruleset_id ON ruleset_tags(ruleset_id)',
+        'CREATE INDEX IF NOT EXISTS idx_ruleset_tags_tag_id ON ruleset_tags(tag_id)',
+        'CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name)'
+      ];
+
+      for (const indexSql of createIndexes) {
+        await new Promise((resolve, reject) => {
+          this.db.run(indexSql, (err) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
+      }
+      console.log('Tag-Indizes erstellt/überprüft');
       
       console.log('Tabellenerstellung abgeschlossen');
       

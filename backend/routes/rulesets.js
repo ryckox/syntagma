@@ -50,6 +50,82 @@ function getChangedFields(oldObj, newObj, fieldsToCheck) {
   return { changes, oldValues, newValues };
 }
 
+// Hilfsfunktionen für Tag-Management
+async function getOrCreateTag(db, tagName) {
+  const normalizedName = tagName.trim().toLowerCase();
+  if (!normalizedName) return null;
+
+  // Prüfen ob Tag bereits existiert
+  let tag = await db.get('SELECT id, name FROM tags WHERE LOWER(name) = ?', [normalizedName]);
+  
+  if (!tag) {
+    // Neues Tag erstellen
+    const result = await db.run('INSERT INTO tags (name) VALUES (?)', [tagName.trim()]);
+    tag = { id: result.lastID, name: tagName.trim() };
+  }
+  
+  return tag;
+}
+
+async function updateRulesetTags(db, rulesetId, tagNames) {
+  // Alte Tag-Zuordnungen löschen
+  await db.run('DELETE FROM ruleset_tags WHERE ruleset_id = ?', [rulesetId]);
+  
+  const tagIds = [];
+  
+  // Sicherstellen, dass tagNames ein Array von Strings ist
+  const validTagNames = Array.isArray(tagNames) 
+    ? tagNames.filter(name => typeof name === 'string' && name.trim().length > 0)
+    : [];
+  
+  // Neue Tags erstellen/finden und zuordnen
+  for (const tagName of validTagNames) {
+    const tag = await getOrCreateTag(db, tagName);
+    if (tag) {
+      await db.run('INSERT INTO ruleset_tags (ruleset_id, tag_id) VALUES (?, ?)', [rulesetId, tag.id]);
+      tagIds.push(tag.id);
+    }
+  }
+  
+  return tagIds;
+}
+
+async function getRulesetTags(db, rulesetId) {
+  return await db.all(`
+    SELECT t.id, t.name
+    FROM tags t
+    JOIN ruleset_tags rt ON t.id = rt.tag_id
+    WHERE rt.ruleset_id = ?
+    ORDER BY t.name
+  `, [rulesetId]);
+}
+
+// Tag-Auto-Complete für Editoren (nur authentifizierte Benutzer)
+router.get('/tags/suggest', authenticateToken, async (req, res) => {
+  const { q } = req.query;
+  
+  try {
+    const db = await getDatabase();
+    
+    if (!q || q.length < 2) {
+      return res.json([]);
+    }
+    
+    const suggestions = await db.all(`
+      SELECT DISTINCT name
+      FROM tags
+      WHERE name LIKE ?
+      ORDER BY name
+      LIMIT 10
+    `, [`%${q}%`]);
+    
+    res.json(suggestions.map(tag => tag.name));
+  } catch (error) {
+    console.error('Fehler beim Tag-Suggest:', error);
+    res.status(500).json({ error: 'Interner Serverfehler' });
+  }
+});
+
 // Alle Regelwerke abrufen mit verbesserter Pagination
 router.get('/', optionalAuth, async (req, res) => {
   const { 
@@ -286,7 +362,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
     
     const ruleset = await db.get(`
       SELECT r.id, r.title, r.content, r.status, r.version, r.created_at, r.updated_at,
-             r.type_id,
+             r.type_id, r.created_by,
              rt.name as type_name, rt.color as type_color, rt.icon as type_icon,
              u.username as created_by_name
       FROM rulesets r
@@ -314,6 +390,12 @@ router.get('/:id', optionalAuth, async (req, res) => {
       WHERE rt.ruleset_id = ?
     `, [id]);
     ruleset.topics = topics;
+
+    // Tags laden (nur für Bearbeiter)
+    if (req.user && (req.user.role === 'admin' || ruleset.created_by === req.user.id)) {
+      const tags = await getRulesetTags(db, id);
+      ruleset.tag_names = tags.map(tag => tag.name);
+    }
 
     // Inhaltsverzeichnis laden
     const tableOfContents = await db.all(`
@@ -370,7 +452,13 @@ router.post('/', [
   }),
   body('content').isLength({ min: 10 }),
   body('status').optional().isIn(['draft', 'published']),
-  body('tableOfContents').optional().isArray()
+  body('tableOfContents').optional().isArray(),
+  body('tag_names').optional().isArray().custom((value) => {
+    if (value && !value.every(name => typeof name === 'string' && name.trim().length > 0)) {
+      throw new Error('Alle Tag-Namen müssen nicht-leere Strings sein');
+    }
+    return true;
+  })
 ], async (req, res) => {
   console.log('POST /api/rulesets - Creating new ruleset');
   
@@ -379,7 +467,7 @@ router.post('/', [
     return res.status(400).json({ errors: errors.array() });
   }
 
-  const { title, type_id, topic_ids, content, status = 'draft', tableOfContents = [] } = req.body;
+  const { title, type_id, topic_ids, content, status = 'draft', tableOfContents = [], tag_names = [] } = req.body;
 
   try {
     const db = await getDatabase();
@@ -420,6 +508,11 @@ router.post('/', [
         INSERT INTO ruleset_topics (ruleset_id, topic_id) 
         VALUES (?, ?)
       `, [rulesetId, topicId]);
+    }
+
+    // Tags verknüpfen
+    if (tag_names && tag_names.length > 0) {
+      await updateRulesetTags(db, rulesetId, tag_names);
     }
 
     // Inhaltsverzeichnis erstellen
@@ -463,7 +556,11 @@ router.post('/', [
     `, [rulesetId]);
     newRuleset.topics = topics;
 
+    // Tags für das neue Regelwerk laden
+    const tags = await getRulesetTags(db, rulesetId);
+    newRuleset.tag_names = tags.map(tag => tag.name);
     
+    console.log('Created ruleset tags:', newRuleset.tag_names);
 
     res.status(201).json(newRuleset);
   } catch (error) {
@@ -486,6 +583,12 @@ router.put('/:id', [
   body('content').optional().isLength({ min: 10 }),
   body('status').optional().isIn(['draft', 'published', 'archived']),
   body('tableOfContents').optional().isArray(),
+  body('tag_names').optional().isArray().custom((value) => {
+    if (value && !value.every(tag => typeof tag === 'string' && tag.trim().length > 0 && tag.trim().length <= 50)) {
+      throw new Error('Alle Tags müssen nicht-leere Strings mit maximal 50 Zeichen sein');
+    }
+    return true;
+  }),
   body('changeSummary').optional().trim().escape()
 ], async (req, res) => {
   const errors = validationResult(req);
@@ -494,7 +597,7 @@ router.put('/:id', [
   }
 
   const { id } = req.params;
-  const { title, type_id, topic_ids, content, status, tableOfContents, changeSummary } = req.body;
+  const { title, type_id, topic_ids, content, status, tableOfContents, tag_names, changeSummary } = req.body;
 
   try {
     const db = await getDatabase();
@@ -539,7 +642,7 @@ router.put('/:id', [
       values.push(status);
     }
 
-    if (updates.length === 0 && !tableOfContents && !topic_ids) {
+    if (updates.length === 0 && !tableOfContents && !topic_ids && !tag_names) {
       
       return res.status(400).json({ error: 'Keine Aktualisierungsdaten bereitgestellt' });
     }
@@ -560,15 +663,18 @@ router.put('/:id', [
       }
     }
 
-    // Version erhöhen nur wenn als "published" gespeichert wird
+    // Version erhöhen nur bei substantiellen Änderungen in published Regelwerken
     let newVersion = existingRuleset.version;
+    const hasContentChanges = content !== undefined || tableOfContents !== undefined || 
+                              title !== undefined || type_id !== undefined || topic_ids !== undefined;
+    
     if (status === 'published' && existingRuleset.status !== 'published') {
       // Erste Veröffentlichung oder Wiederveröffentlichung
-      newVersion = existingRuleset.version + 1;
+      newVersion = Math.max(1, existingRuleset.version);
       updates.push('version = ?');
       values.push(newVersion);
-    } else if (status === 'published' && (content !== undefined || tableOfContents)) {
-      // Update an bereits veröffentlichtem Regelwerk
+    } else if (status === 'published' && hasContentChanges) {
+      // Update an bereits veröffentlichtem Regelwerk mit substantiellen Änderungen
       newVersion = existingRuleset.version + 1;
       updates.push('version = ?');
       values.push(newVersion);
@@ -599,6 +705,11 @@ router.put('/:id', [
       }
     }
 
+    // Tag-Zuordnungen aktualisieren
+    if (tag_names !== undefined) {
+      await updateRulesetTags(db, id, tag_names);
+    }
+
     // Inhaltsverzeichnis aktualisieren
     if (tableOfContents) {
       await db.run('DELETE FROM table_of_contents WHERE ruleset_id = ?', [id]);
@@ -613,7 +724,7 @@ router.put('/:id', [
     }
 
     // Audit-Log-Eintrag für Update
-    if (content !== undefined || tableOfContents || topic_ids !== undefined || title !== undefined || type_id !== undefined || status !== undefined) {
+    if (content !== undefined || tableOfContents || topic_ids !== undefined || tag_names !== undefined || title !== undefined || type_id !== undefined || status !== undefined) {
       const fieldsToCheck = ['title', 'content', 'status', 'type_id'];
       const oldObj = {
         title: existingRuleset.title,
@@ -634,6 +745,12 @@ router.put('/:id', [
         changes.topic_ids = { from: 'previous_topics', to: topic_ids };
         oldValues.topic_ids = 'previous_topics';
         newValues.topic_ids = topic_ids;
+      }
+
+      if (tag_names !== undefined) {
+        changes.tag_names = { from: 'previous_tags', to: tag_names };
+        oldValues.tag_names = 'previous_tags';
+        newValues.tag_names = tag_names;
       }
 
       if (tableOfContents) {
@@ -674,7 +791,11 @@ router.put('/:id', [
     `, [id]);
     updatedRuleset.topics = topics;
 
+    // Tags für das aktualisierte Regelwerk laden
+    const tags = await getRulesetTags(db, id);
+    updatedRuleset.tag_names = tags.map(tag => tag.name);
     
+    console.log('Updated ruleset tags:', updatedRuleset.tag_names);
 
     res.json(updatedRuleset);
   } catch (error) {

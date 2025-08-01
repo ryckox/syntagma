@@ -92,9 +92,15 @@
                           :style="{ backgroundColor: ruleset.type_color + '10', color: ruleset.type_color }">
                       {{ ruleset.type_name }}
                     </span>
-                    <span>{{ ruleset.topic_name }}</span>
+                    <span v-if="ruleset.topics && ruleset.topics.length > 0">
+                      {{ ruleset.topics.map(t => t.name).join(', ') }}
+                    </span>
                     <span class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">
                       Version {{ ruleset.version }}
+                    </span>
+                    <!-- Tag-based result indicator -->
+                    <span v-if="ruleset.found_via_tag" class="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded-full">
+                      Ähnliches Thema gefunden
                     </span>
                   </div>
                   <p class="text-gray-600 text-sm leading-relaxed line-clamp-2" 
@@ -135,7 +141,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { type Ruleset } from '@/stores/ruleset'
 import {
   MagnifyingGlassIcon,
@@ -150,11 +156,14 @@ import {
 import AppNavigation from '@/components/AppNavigation.vue'
 
 const router = useRouter()
+const route = useRoute()
 
 // Reactive data
 const searchQuery = ref('')
 const isLoading = ref(true)
 const allRulesets = ref<Ruleset[]>([])
+const searchResults = ref<Ruleset[]>([])
+const isSearching = ref(false)
 
 // Search suggestions for empty state
 const searchSuggestions = [
@@ -168,24 +177,13 @@ const searchSuggestions = [
 
 // Computed properties
 const filteredRulesets = computed(() => {
-  let results = allRulesets.value
-  
-  // Filter by search query if provided
+  // If there's a search query, use searchResults from API
   if (searchQuery.value.trim()) {
-    const query = searchQuery.value.toLowerCase().trim()
-    results = results.filter(ruleset => {
-      return (
-        ruleset.title.toLowerCase().includes(query) ||
-        ruleset.content?.toLowerCase().includes(query) ||
-        ruleset.type_name?.toLowerCase().includes(query) ||
-        ruleset.topic_name?.toLowerCase().includes(query) ||
-        ruleset.created_by_name?.toLowerCase().includes(query)
-      )
-    })
+    return searchResults.value
   }
   
-  // Sort by last updated (newest first)
-  return results.sort((a, b) => {
+  // Otherwise show all rulesets sorted by update date
+  return allRulesets.value.sort((a, b) => {
     const dateA = new Date(a.updated_at).getTime()
     const dateB = new Date(b.updated_at).getTime()
     return dateB - dateA // Descending order (newest first)
@@ -195,6 +193,13 @@ const filteredRulesets = computed(() => {
 // Lifecycle
 onMounted(async () => {
   await loadAllRulesets()
+  
+  // Check for search query in URL parameters
+  const queryParam = route.query.q
+  if (queryParam && typeof queryParam === 'string') {
+    searchQuery.value = queryParam
+    await performSearch(queryParam)
+  }
 })
 
 // Methods
@@ -230,9 +235,44 @@ async function loadAllRulesets() {
   }
 }
 
+async function performSearch(query: string) {
+  if (!query || query.trim().length < 2) {
+    searchResults.value = []
+    return
+  }
+  
+  isSearching.value = true
+  
+  try {
+    const response = await fetch(`http://localhost:3001/api/search?q=${encodeURIComponent(query.trim())}`)
+    
+    if (response.ok) {
+      const results = await response.json()
+      searchResults.value = results
+    } else {
+      console.error('Search failed:', response.status)
+      searchResults.value = []
+    }
+  } catch (error) {
+    console.error('Search error:', error)
+    searchResults.value = []
+  } finally {
+    isSearching.value = false
+  }
+}
+
+let searchTimeout: number | null = null
+
 function handleSearchInput() {
-  // Debounce search input if needed
-  // Could add analytics tracking here
+  // Clear previous timeout
+  if (searchTimeout) {
+    clearTimeout(searchTimeout)
+  }
+  
+  // Debounce search input
+  searchTimeout = setTimeout(() => {
+    performSearch(searchQuery.value)
+  }, 300)
 }
 
 function clearSearch() {

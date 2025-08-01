@@ -17,13 +17,46 @@
               <p class="mt-3 text-base text-gray-500 sm:mt-5 sm:text-lg sm:max-w-xl sm:mx-auto md:mt-5 md:text-xl lg:mx-0">
                 Syntagma ist Ihre zentrale Plattform zur Zusammenführung, schnellen Dokumentation und transparenten Darstellung von Regelwerken für Datenschutz, IT-Sicherheit und Dienstvereinbarungen.
               </p>
+              
+              <!-- Quick Search Section -->
+              <div class="mt-6 sm:mt-8">
+                <div class="relative max-w-xl mx-auto lg:mx-0">
+                  <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <svg class="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+                  <input
+                    v-model="searchQuery"
+                    type="text"
+                    placeholder="Regelwerk suchen... (z.B. Datenschutz, IT-Sicherheit, Arbeitszeit)"
+                    class="block w-full pl-12 pr-32 py-4 border border-gray-300 rounded-xl shadow-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base placeholder-gray-500"
+                    @keyup.enter="performSearch"
+                  >
+                  <div class="absolute inset-y-0 right-0 flex items-center pr-2">
+                    <button
+                      @click="performSearch"
+                      :disabled="!searchQuery.trim()"
+                      class="inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                    >
+                      <svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                      Suchen
+                    </button>
+                  </div>
+                </div>
+                <p class="mt-3 text-sm text-gray-500 text-center lg:text-left">
+                  <span class="font-medium">Sofortige Suche:</span> Durchsuchen Sie alle verfügbaren Regelwerke in Echtzeit
+                </p>
+              </div>
               <div class="mt-5 sm:mt-8 sm:flex sm:justify-center lg:justify-start">
                 <div class="rounded-md shadow">
                   <router-link
                     to="/search"
                     class="w-full flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 md:py-4 md:text-lg md:px-10 transition-colors"
                   >
-                    Regelwerke durchsuchen
+                    Alle Regelwerke ansehen
                   </router-link>
                 </div>
                 <div class="mt-3 sm:mt-0 sm:ml-3">
@@ -185,6 +218,36 @@
 </template>
 
 <script setup>
+import { ref, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import AppNavigation from '@/components/AppNavigation.vue'
+
+const router = useRouter()
+const route = useRoute()
+const searchQuery = ref('')
+
+function performSearch() {
+  const query = searchQuery.value.trim()
+  if (query) {
+    // Navigate to search page with query parameter
+    router.push({
+      path: '/search',
+      query: { q: query }
+    })
+  }
+}
+
+// Check if there's a search query in URL parameters on mount
+onMounted(() => {
+  const queryParam = route.query.q
+  if (queryParam && typeof queryParam === 'string') {
+    // If there's a query parameter, redirect to search page
+    router.push({
+      path: '/search',
+      query: { q: queryParam }
+    })
+  }
+})
+
 console.log('Welcome component loaded successfully!')
 </script>

@@ -55,6 +55,9 @@ export interface Ruleset {
   updated_at: string
   tableOfContents?: TableOfContentItem[]
   changeHistory?: ChangeHistoryItem[]
+  // Search-related fields
+  found_via_tag?: boolean
+  matching_tags?: string[]
 }
 
 export const useRulesetStore = defineStore('ruleset', () => {
